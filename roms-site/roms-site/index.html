@@ -122,7 +122,7 @@ footer{color:var(--mute);font-size:.8rem}
     </table></div>
   </section>
 
-  <footer>데이터: 해양수산부 국립해양조사원 ROMS 수치예측모델 조회 서비스 (공공데이터포털). 유향은 정북 기준 시계방향 각도이며 지도 화살표는 해당 방향을 가리킵니다.</footer>
+  <footer>데이터: 해양수산부 국립해양조사원 ROMS 수치예측모델 및 해양관측 조회 서비스 (공공데이터포털). 유향은 정북 기준 시계방향 각도이며 지도 화살표는 해당 방향을 가리킵니다.</footer>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -209,6 +209,10 @@ footer{color:var(--mute);font-size:.8rem}
         batch.forEach(b => rows = rows.concat(b.items));
       }
       build(rows, lat, lon, first.total);
+
+      // 데이터 렌더링 직후 관측부이 실측 데이터 호출 및 마커 추가
+      fetchBuoyData();
+
       setStatus(first.total > rows.length
         ? `${rows.length.toLocaleString()}건만 표시했습니다 (전체 ${first.total.toLocaleString()}건). 범위를 줄이면 모두 볼 수 있습니다.`
         : `${rows.length.toLocaleString()}건을 불러왔습니다.`, "ok");
@@ -236,7 +240,7 @@ footer{color:var(--mute);font-size:.8rem}
     $("mapbar").hidden = false;
     const sl = $("tslider"); sl.max = times.length - 1; sl.value = 0;
   
-  // 불러온 데이터에서 날짜만 추출해 dateSel 드롭다운에 채움
+    // 불러온 데이터에서 날짜만 추출해 dateSel 드롭다운에 채움
     const dates = [...new Set(times.map(t => t.substring(0, 10)))];
     $("dateSel").innerHTML = dates.map(d => `<option value="${d}">${d}</option>`).join("");
     updateTimeSel(times[0]);
@@ -253,14 +257,14 @@ footer{color:var(--mute);font-size:.8rem}
     const h = 220 - 220 * f;   // 파랑 → 빨강
     return `hsl(${h} 85% 48%)`;
   }
+  
   function renderMap(i) {
     layer.clearLayers();
-     layer.clearLayers();
-     const t = data.times[i];
-  // 슬라이더 이동 시 드롭다운 값을 자동으로 맞춤
-     $("dateSel").value = t.substring(0, 10);
-     updateTimeSel(t);
-     $("timeSel").value = t.substring(11, 16);
+    const t = data.times[i];
+    // 슬라이더 이동 시 드롭다운 값을 자동으로 맞춤
+    $("dateSel").value = t.substring(0, 10);
+    updateTimeSel(t);
+    $("timeSel").value = t.substring(11, 16);
     const temps = [...data.points.values()].map(p => p.series.get(t)).filter(Boolean).map(r => +r.wtem);
     const lo = Math.min(...temps), hi = Math.max(...temps);
     data.points.forEach((p, key) => {
@@ -348,6 +352,36 @@ footer{color:var(--mute);font-size:.8rem}
     el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${unit} 시계열">${g}${xl}
       <path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2"/>
       <circle cx="${X(li)}" cy="${Y(ys[li])}" r="3.5" fill="var(--accent)"/></svg>`;
+  }
+  
+  // 해양관측 실측 데이터를 불러와 지도에 빨간색 마커로 표시하는 함수
+  async function fetchBuoyData() {
+    try {
+      const res = await fetch("/api/buoy?type=json&numOfRows=100&pageNo=1");
+      const j = await res.json();
+      const body = (j.response && j.response.body) ? j.response.body : j.body;
+      let items = body?.items;
+      if (items && !Array.isArray(items)) items = items.item || [];
+      
+      items.forEach(b => {
+        // 공공데이터포털 JSON 필드명 변동에 대응하기 위한 Fallback
+        const lat = parseFloat(b.obs_lat || b.obsLat || b.lat);
+        const lon = parseFloat(b.obs_lon || b.obsLon || b.lon);
+        if (!lat || !lon) return;
+
+        const m = L.circleMarker([lat, lon], {
+          radius: 7, color: "#b3261e", fillColor: "#ff8a80", weight: 2, fillOpacity: 0.9
+        }).addTo(map);
+
+        m.bindPopup(`<b>관측부이 실황 (${b.obs_post_name || b.obsCode || '이름없음'})</b><br>
+          시각: ${b.record_time || b.obsTime || "-"}<br>
+          수온: ${b.water_temp || b.wtem || "-"} ℃<br>
+          유속: ${b.current_speed || b.crsp || "-"} m/s<br>
+          염분: ${b.salinity || "-"}`);
+      });
+    } catch (e) {
+      console.warn("부이 실측 데이터를 불러오지 못했습니다.", e);
+    }
   }
 
   $("csv").addEventListener("click", () => {
