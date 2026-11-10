@@ -278,6 +278,33 @@ footer{color:var(--mute);font-size:.8rem}
   }
   $("tslider").addEventListener("input", e => renderMap(+e.target.value));
 
+  $("dateSel").addEventListener("change", () => {
+    updateTimeSel();
+    syncMap();
+  });
+  $("timeSel").addEventListener("change", syncMap);
+
+  function updateTimeSel(forceTime) {
+    if (!data) return;
+    const d = $("dateSel").value;
+    // 선택한 날짜에 해당하는 시간만 걸러내어 timeSel 드롭다운에 채움
+    const tms = data.times.filter(t => t.startsWith(d)).map(t => t.substring(11, 16));
+    let curr = forceTime ? forceTime.substring(11, 16) : $("timeSel").value;
+    
+    $("timeSel").innerHTML = tms.map(tm => `<option value="${tm}">${tm}</option>`).join("");
+    if (tms.includes(curr)) $("timeSel").value = curr;
+  }
+
+  function syncMap() {
+    if (!data) return;
+    const targetStr = `${$("dateSel").value} ${$("timeSel").value}:00`;
+    const idx = data.times.indexOf(targetStr);
+    if (idx !== -1) {
+      $("tslider").value = idx;
+      renderMap(idx);
+    }
+  }
+
   const fmt = (v, d) => (v === null || v === undefined || v === "" || isNaN(+v)) ? "–" : (+v).toFixed(d);
   function renderNearest() {
     const p = data.points.get(data.nearest);
