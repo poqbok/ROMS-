@@ -249,8 +249,12 @@ footer{color:var(--mute);font-size:.8rem}
   }
   function renderMap(i) {
     layer.clearLayers();
-    const t = data.times[i];
-    $("tlabel").textContent = t;
+     layer.clearLayers();
+     const t = data.times[i];
+  // 슬라이더 이동 시 드롭다운 값을 자동으로 맞춤
+     $("dateSel").value = t.substring(0, 10);
+     updateTimeSel(t);
+     $("timeSel").value = t.substring(11, 16);
     const temps = [...data.points.values()].map(p => p.series.get(t)).filter(Boolean).map(r => +r.wtem);
     const lo = Math.min(...temps), hi = Math.max(...temps);
     data.points.forEach((p, key) => {
