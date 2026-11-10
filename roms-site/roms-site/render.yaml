@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: roms-site
+    runtime: python
+    plan: free
+    buildCommand: "echo no build"
+    startCommand: python server.py
+    envVars:
+      - key: ROMS_API_KEY
+        sync: false

@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ROMS 해양 예측 조회</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Layout: 좌측 조회 패널 + 우측 지도, 아래에 시계열 차트와 표 (모바일은 한 열) */
+:root{
+  --bg:#f3f6f8; --panel:#ffffff; --ink:#0f2230; --mute:#5b6f7d; --line:#d7e0e6;
+  --accent:#0b6e8a; --accent-ink:#ffffff; --warn:#b4541a; --err:#b3261e;
+  --sans:"IBM Plex Sans KR",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0b1820; --panel:#12252f; --ink:#e4eef3; --mute:#8fa6b3; --line:#244050;
+  --accent:#4cc0de; --accent-ink:#06222c; --warn:#e89a62; --err:#ff8a80; color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 var(--sans)}
+.wrap{max-width:1200px;margin:0 auto;padding:20px 16px 40px;display:grid;gap:16px}
+header h1{margin:0;font-size:1.5rem;font-weight:600;text-wrap:balance}
+header p{margin:4px 0 0;color:var(--mute);max-width:68ch}
+.grid{display:grid;grid-template-columns:320px minmax(0,1fr);gap:16px}
+@media (max-width:860px){.grid{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;min-width:0}
+.panel h2{margin:0 0 12px;font-size:.78rem;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);font-weight:600}
+label{display:block;font-size:.85rem;color:var(--mute);margin-bottom:4px}
+input,select,button{font:inherit;color:inherit}
+input,select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);font-family:var(--mono);font-size:.92rem}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.field{margin-bottom:12px}
+button{cursor:pointer;border-radius:6px;border:1px solid var(--line);background:var(--panel);padding:8px 12px}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600;width:100%;padding:10px}
+button:disabled{opacity:.55;cursor:wait}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.presets{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.presets button{font-size:.8rem;padding:4px 9px}
+.hint{font-size:.8rem;color:var(--mute);margin:8px 0 0}
+#status{min-height:1.4em;font-size:.88rem;margin-top:10px}
+#status.err{color:var(--err)} #status.ok{color:var(--mute)}
+#map{height:460px;border-radius:6px;border:1px solid var(--line)}
+.mapbar{display:flex;gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap}
+.mapbar input[type=range]{flex:1 1 200px;padding:0;accent-color:var(--accent)}
+.mapbar output{font-family:var(--mono);font-size:.88rem;min-width:11.5em}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px}
+.stat{border:1px solid var(--line);border-radius:6px;padding:8px 10px}
+.stat b{display:block;font:500 1.25rem var(--mono);font-variant-numeric:tabular-nums}
+.stat span{font-size:.78rem;color:var(--mute)}
+.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.chart h3{margin:0 0 4px;font-size:.9rem;font-weight:500}
+svg text{fill:var(--mute);font:11px var(--mono)}
+.tablewrap{overflow:auto;max-height:360px;border:1px solid var(--line);border-radius:6px}
+table{border-collapse:collapse;width:100%;font:.85rem var(--mono);font-variant-numeric:tabular-nums}
+th,td{padding:6px 10px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line)}
+th{position:sticky;top:0;background:var(--panel);color:var(--mute);font-weight:500}
+td:first-child,th:first-child{text-align:left}
+.head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.head h2{margin:0}
+.arrow{width:26px;height:26px;display:grid;place-items:center}
+.arrow svg{width:22px;height:22px;filter:drop-shadow(0 0 1px rgba(0,0,0,.7))}
+footer{color:var(--mute);font-size:.8rem}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>ROMS 해양 예측 조회</h1>
+    <p>국립해양조사원 ROMS 수치예측모델의 수온(℃), 유향(°), 유속(m/s) 예측을 좌표로 조회합니다. 입력한 위치와 가장 가까운 예측점의 시간별 변화를 보여 줍니다.</p>
+  </header>
+
+  <div class="grid">
+    <section class="panel" aria-labelledby="qh">
+      <h2 id="qh">조회 조건</h2>
+      <div class="presets" id="presets" aria-label="예시 위치"></div>
+      <div class="row">
+        <div><label for="lat">위도 (°N)</label><input id="lat" inputmode="decimal" value="34.05"></div>
+        <div><label for="lon">경도 (°E)</label><input id="lon" inputmode="decimal" value="123.25"></div>
+      </div>
+      <div class="field">
+        <label for="span">조회 범위 (중심에서 ±)</label>
+        <select id="span">
+          <option value="0.05" selected>±0.05° (약 5.5 km)</option>
+          <option value="0.1">±0.10° (약 11 km)</option>
+          <option value="0.25">±0.25° (약 28 km)</option>
+          <option value="0.5">±0.50° (최대, 약 55 km)</option>
+        </select>
+      </div>
+      <button id="go" class="primary" type="button">예측 조회</button>
+      <div id="status" role="status" aria-live="polite"></div>
+      <p class="hint">지도를 누르면 그 위치가 입력됩니다. 현재 일자부터 8일간의 예측이 제공되며, 위도·경도 범위는 각각 최대 1°입니다.</p>
+    </section>
+
+    <section class="panel" aria-labelledby="mh">
+      <div class="head"><h2 id="mh">예측점 지도</h2><span id="mapnote" class="hint" style="margin:0"></span></div>
+      <div id="map" role="application" aria-label="예측점 지도"></div>
+      <div class="mapbar" id="mapbar" hidden>
+        <label for="tslider" style="margin:0">예측 시각</label>
+        <input id="tslider" type="range" min="0" max="0" value="0">
+        <output id="tlabel" for="tslider"></output>
+      </div>
+    </section>
+  </div>
+
+  <section class="panel" id="result" hidden>
+    <div class="head"><h2 id="rh">가장 가까운 예측점</h2><button id="csv" type="button">CSV 저장</button></div>
+    <div class="stats" id="stats"></div>
+    <div class="charts">
+      <div class="chart"><h3>수온 (℃)</h3><div id="c-wtem"></div></div>
+      <div class="chart"><h3>유속 (m/s)</h3><div id="c-crsp"></div></div>
+    </div>
+  </section>
+
+  <section class="panel" id="tablepanel" hidden>
+    <h2>시간별 값</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>예측일시</th><th>수온 ℃</th><th>유속 m/s</th><th>유향 °</th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table></div>
+  </section>
+
+  <footer>데이터: 해양수산부 국립해양조사원 ROMS 수치예측모델 조회 서비스 (공공데이터포털). 유향은 정북 기준 시계방향 각도이며 지도 화살표는 해당 방향을 가리킵니다.</footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const PRESETS = [
+    ["서해 (예시 문서 좌표)", 34.05, 123.25], ["동해 울릉도 부근", 37.5, 131.0],
+    ["남해 제주 남쪽", 32.9, 126.6], ["서해 백령도 부근", 37.9, 124.6]
+  ];
+  const MAX_PAGES = 20, ROWS = 300;
+
+  const map = L.map("map", {zoomControl: true}).setView([36, 127.5], 6);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 12, attribution: "&copy; OpenStreetMap"
+  }).addTo(map);
+  let centerMarker = null, boxRect = null, layer = L.layerGroup().addTo(map);
+  let data = null;   // {points: Map, times: [], nearest: key, rows}
+
+  PRESETS.forEach(([n, la, lo]) => {
+    const b = document.createElement("button"); b.type = "button"; b.textContent = n;
+    b.onclick = () => { $("lat").value = la; $("lon").value = lo; drawBox(); map.setView([la, lo], 9); };
+    $("presets").appendChild(b);
+  });
+
+  function readInputs() {
+    const lat = parseFloat($("lat").value), lon = parseFloat($("lon").value), s = parseFloat($("span").value);
+    if (!isFinite(lat) || !isFinite(lon)) throw new Error("위도와 경도를 숫자로 입력해 주세요.");
+    if (lat < 0 || lat > 90 || lon < 0 || lon > 180) throw new Error("위도는 0~90, 경도는 0~180 범위로 입력해 주세요.");
+    return {lat, lon, s};
+  }
+  function drawBox() {
+    try {
+      const {lat, lon, s} = readInputs();
+      if (centerMarker) map.removeLayer(centerMarker);
+      if (boxRect) map.removeLayer(boxRect);
+      boxRect = L.rectangle([[lat - s, lon - s], [lat + s, lon + s]], {color: "#0b6e8a", weight: 1, fill: false, dashArray: "4 4"}).addTo(map);
+      centerMarker = L.circleMarker([lat, lon], {radius: 5, color: "#0b6e8a", weight: 2, fillOpacity: .9}).addTo(map);
+    } catch (e) {}
+  }
+  map.on("click", e => {
+    $("lat").value = e.latlng.lat.toFixed(4); $("lon").value = e.latlng.lng.toFixed(4); drawBox();
+  });
+  ["lat", "lon", "span"].forEach(id => $(id).addEventListener("change", drawBox));
+  drawBox();
+
+  function setStatus(msg, cls) { const s = $("status"); s.textContent = msg; s.className = cls || ""; }
+
+  async function fetchPage(q, page) {
+    const url = `/api/roms?${q}&pageNo=${page}&numOfRows=${ROWS}`;
+    const r = await fetch(url);
+    const text = await r.text();
+    let j;
+    try { j = JSON.parse(text); }
+    catch { throw new Error("API가 JSON이 아닌 응답을 돌려주었습니다. 인증키 등록·승인 상태를 확인해 주세요."); }
+    if (j.error) throw new Error(j.error);
+    const res = j.response;
+    if (!res) throw new Error("예상하지 못한 응답 형식입니다.");
+    const code = res.header && res.header.resultCode;
+    if (code !== "00" && code !== "0") throw new Error(`API 오류 ${code}: ${res.header.resultMsg}`);
+    const body = res.body || {};
+    let items = body.items;
+    if (items && !Array.isArray(items)) items = items.item || [];
+    return {items: items || [], total: Number(body.totalCount || 0)};
+  }
+
+  async function run() {
+    let inp;
+    try { inp = readInputs(); } catch (e) { return setStatus(e.message, "err"); }
+    const {lat, lon, s} = inp;
+    const q = new URLSearchParams({
+      ymin: (lat - s).toFixed(5), ymax: (lat + s).toFixed(5),
+      xmin: (lon - s).toFixed(5), xmax: (lon + s).toFixed(5)
+    }).toString();
+    $("go").disabled = true; setStatus("예측 데이터를 불러오는 중…");
+    try {
+      const first = await fetchPage(q, 1);
+      if (!first.total) throw new Error("이 범위에 예측점이 없습니다. 바다 위의 좌표인지 확인하거나 범위를 넓혀 보세요.");
+      let rows = first.items;
+      const pages = Math.min(Math.ceil(first.total / ROWS), MAX_PAGES);
+      for (let p = 2; p <= pages; p += 3) {
+        setStatus(`불러오는 중… ${rows.length.toLocaleString()} / ${first.total.toLocaleString()}건`);
+        const batch = await Promise.all([p, p + 1, p + 2].filter(x => x <= pages).map(x => fetchPage(q, x)));
+        batch.forEach(b => rows = rows.concat(b.items));
+      }
+      build(rows, lat, lon, first.total);
+      setStatus(first.total > rows.length
+        ? `${rows.length.toLocaleString()}건만 표시했습니다 (전체 ${first.total.toLocaleString()}건). 범위를 줄이면 모두 볼 수 있습니다.`
+        : `${rows.length.toLocaleString()}건을 불러왔습니다.`, "ok");
+    } catch (e) { setStatus(e.message, "err"); }
+    finally { $("go").disabled = false; }
+  }
+
+  function build(rows, lat, lon, total) {
+    const points = new Map(), timeSet = new Set();
+    rows.forEach(r => {
+      const key = `${r.lat},${r.lot}`;
+      if (!points.has(key)) points.set(key, {lat: +r.lat, lon: +r.lot, series: new Map()});
+      points.get(key).series.set(r.predcDt, r);
+      timeSet.add(r.predcDt);
+    });
+    const times = [...timeSet].sort();
+    let nearest = null, best = Infinity;
+    const kx = Math.cos(lat * Math.PI / 180);
+    points.forEach((p, k) => {
+      const d = (p.lat - lat) ** 2 + ((p.lon - lon) * kx) ** 2;
+      p.dist = Math.sqrt(d) * 111.32;
+      if (d < best) { best = d; nearest = k; }
+    });
+    data = {points, times, nearest, rows, lat, lon, _auto: nearest};
+    $("mapbar").hidden = false;
+    const sl = $("tslider"); sl.max = times.length - 1; sl.value = 0;
+    renderMap(0);
+    const pts = [...points.values()];
+    map.fitBounds(L.latLngBounds(pts.map(p => [p.lat, p.lon])).pad(0.2), {maxZoom: 11});
+    $("mapnote").textContent = `예측점 ${points.size.toLocaleString()}개`;
+    renderNearest();
+  }
+
+  function tempColor(t, lo, hi) {
+    const f = hi > lo ? Math.min(1, Math.max(0, (t - lo) / (hi - lo))) : .5;
+    const h = 220 - 220 * f;   // 파랑 → 빨강
+    return `hsl(${h} 85% 48%)`;
+  }
+  function renderMap(i) {
+    layer.clearLayers();
+    const t = data.times[i];
+    $("tlabel").textContent = t;
+    const temps = [...data.points.values()].map(p => p.series.get(t)).filter(Boolean).map(r => +r.wtem);
+    const lo = Math.min(...temps), hi = Math.max(...temps);
+    data.points.forEach((p, key) => {
+      const r = p.series.get(t); if (!r) return;
+      const col = tempColor(+r.wtem, lo, hi);
+      const rot = Number(r.crdir);
+      const html = `<div class="arrow" style="transform:rotate(${isFinite(rot) ? rot : 0}deg)"><svg viewBox="0 0 24 24"><path d="M12 2 L19 20 L12 16 L5 20 Z" fill="${col}" stroke="#fff" stroke-width="1.2"/></svg></div>`;
+      const m = L.marker([p.lat, p.lon], {icon: L.divIcon({html, className: "", iconSize: [26, 26], iconAnchor: [13, 13]})});
+      m.bindPopup(`<b>${key.replace(",", ", ")}</b><br>${t}<br>수온 ${r.wtem} ℃<br>유속 ${r.crsp} m/s<br>유향 ${r.crdir}°`);
+      m.on("click", () => { data.nearest = key; renderNearest(); });
+      layer.addLayer(m);
+    });
+    const np = data.points.get(data.nearest);
+    layer.addLayer(L.circleMarker([np.lat, np.lon], {radius: 15, color: "#b4541a", weight: 2, fill: false, interactive: false}));
+  }
+  $("tslider").addEventListener("input", e => renderMap(+e.target.value));
+
+  const fmt = (v, d) => (v === null || v === undefined || v === "" || isNaN(+v)) ? "–" : (+v).toFixed(d);
+  function renderNearest() {
+    const p = data.points.get(data.nearest);
+    const recs = data.times.map(t => p.series.get(t)).filter(Boolean);
+    const w = recs.map(r => +r.wtem).filter(isFinite), s = recs.map(r => +r.crsp).filter(isFinite);
+    $("rh").textContent = data.nearest === data._auto ? "가장 가까운 예측점" : "선택한 예측점";
+    $("stats").innerHTML = [
+      [`${p.lat.toFixed(4)}, ${p.lon.toFixed(4)}`, "예측점 위도, 경도"],
+      [`${p.dist.toFixed(1)} km`, "입력 위치에서 거리"],
+      [w.length ? `${Math.min(...w).toFixed(1)} ~ ${Math.max(...w).toFixed(1)} ℃` : "–", "수온 범위"],
+      [s.length ? `최대 ${Math.max(...s).toFixed(2)} m/s` : "–", "유속"]
+    ].map(([v, l]) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`).join("");
+    chart($("c-wtem"), recs.map(r => r.predcDt), recs.map(r => +r.wtem), "℃", 2);
+    chart($("c-crsp"), recs.map(r => r.predcDt), recs.map(r => +r.crsp), "m/s", 2);
+    $("tbody").innerHTML = recs.map(r =>
+      `<tr><td>${r.predcDt}</td><td>${fmt(r.wtem, 2)}</td><td>${fmt(r.crsp, 2)}</td><td>${fmt(r.crdir, 1)}</td></tr>`).join("");
+    $("result").hidden = false; $("tablepanel").hidden = false;
+    if (!data._auto) data._auto = data.nearest;
+    renderMap(+$("tslider").value);
+  }
+
+  function chart(el, xs, ys, unit, dec) {
+    const W = 520, H = 220, m = {l: 44, r: 12, t: 12, b: 26};
+    const ok = ys.map((y, i) => isFinite(y) ? i : -1).filter(i => i >= 0);
+    if (!ok.length) { el.textContent = "데이터 없음"; return; }
+    let lo = Math.min(...ok.map(i => ys[i])), hi = Math.max(...ok.map(i => ys[i]));
+    if (hi - lo < 1e-6) { lo -= .5; hi += .5; }
+    const pad = (hi - lo) * .08; lo -= pad; hi += pad;
+    const X = i => m.l + (xs.length > 1 ? i / (xs.length - 1) : .5) * (W - m.l - m.r);
+    const Y = v => m.t + (1 - (v - lo) / (hi - lo)) * (H - m.t - m.b);
+    const path = ok.map((i, k) => `${k ? "L" : "M"}${X(i).toFixed(1)},${Y(ys[i]).toFixed(1)}`).join("");
+    let g = "";
+    for (let k = 0; k <= 4; k++) {
+      const v = lo + (hi - lo) * k / 4, y = Y(v);
+      g += `<line x1="${m.l}" x2="${W - m.r}" y1="${y}" y2="${y}" stroke="var(--line)"/><text x="${m.l - 6}" y="${y + 4}" text-anchor="end">${v.toFixed(dec === 2 && hi - lo < 2 ? 2 : 1)}</text>`;
+    }
+    // x축: 날짜가 바뀌는 지점 표시
+    let xl = "", last = "";
+    xs.forEach((t, i) => { const d = t.slice(5, 10); if (d !== last) { last = d; xl += `<text x="${X(i)}" y="${H - 6}" text-anchor="start">${d}</text>`; } });
+    const li = ok[ok.length - 1];
+    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${unit} 시계열">${g}${xl}
+      <path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2"/>
+      <circle cx="${X(li)}" cy="${Y(ys[li])}" r="3.5" fill="var(--accent)"/></svg>`;
+  }
+
+  $("csv").addEventListener("click", () => {
+    const p = data.points.get(data.nearest);
+    const lines = ["predcDt,lat,lot,wtem,crsp,crdir"].concat(
+      data.times.map(t => p.series.get(t)).filter(Boolean).map(r => [r.predcDt, r.lat, r.lot, r.wtem, r.crsp, r.crdir].join(",")));
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob(["﻿" + lines.join("\n")], {type: "text/csv"}));
+    a.download = `roms_${p.lat.toFixed(3)}_${p.lon.toFixed(3)}.csv`; a.click();
+  });
+  $("go").addEventListener("click", run);
+  document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.tagName === "INPUT") run(); });
+})();
+</script>
+</body>
+</html>
