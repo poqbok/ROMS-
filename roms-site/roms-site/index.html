@@ -97,9 +97,10 @@ footer{color:var(--mute);font-size:.8rem}
       <div class="head"><h2 id="mh">예측점 지도</h2><span id="mapnote" class="hint" style="margin:0"></span></div>
       <div id="map" role="application" aria-label="예측점 지도"></div>
       <div class="mapbar" id="mapbar" hidden>
-        <label for="tslider" style="margin:0">예측 시각</label>
-        <input id="tslider" type="range" min="0" max="0" value="0">
-        <output id="tlabel" for="tslider"></output>
+       <label style="margin:0">예측 시각</label>
+       <select id="dateSel" style="width: auto; min-width: 120px; padding: 4px 8px;"></select>
+       <select id="timeSel" style="width: auto; min-width: 80px; padding: 4px 8px;"></select>
+       <input id="tslider" type="range" min="0" max="0" value="0" style="flex: 1 1 100px;">
       </div>
     </section>
   </div>
