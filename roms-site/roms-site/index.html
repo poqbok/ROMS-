@@ -235,6 +235,12 @@ footer{color:var(--mute);font-size:.8rem}
     data = {points, times, nearest, rows, lat, lon, _auto: nearest};
     $("mapbar").hidden = false;
     const sl = $("tslider"); sl.max = times.length - 1; sl.value = 0;
+  
+  // 불러온 데이터에서 날짜만 추출해 dateSel 드롭다운에 채움
+    const dates = [...new Set(times.map(t => t.substring(0, 10)))];
+    $("dateSel").innerHTML = dates.map(d => `<option value="${d}">${d}</option>`).join("");
+    updateTimeSel(times[0]);
+
     renderMap(0);
     const pts = [...points.values()];
     map.fitBounds(L.latLngBounds(pts.map(p => [p.lat, p.lon])).pad(0.2), {maxZoom: 11});
