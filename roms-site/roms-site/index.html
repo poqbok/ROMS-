@@ -178,8 +178,8 @@ footer{color:var(--mute);font-size:.8rem}
     try { j = JSON.parse(text); }
     catch { throw new Error("API가 JSON이 아닌 응답을 돌려주었습니다. 인증키 등록·승인 상태를 확인해 주세요."); }
     if (j.error) throw new Error(j.error);
-    const res = j.response;
-    if (!res) throw new Error("예상하지 못한 응답 형식입니다.");
+    const res = j.response || j;
+    if (!res.header) throw new Error("예상하지 못한 응답 형식입니다.");
     const code = res.header && res.header.resultCode;
     if (code !== "00" && code !== "0") throw new Error(`API 오류 ${code}: ${res.header.resultMsg}`);
     const body = res.body || {};
