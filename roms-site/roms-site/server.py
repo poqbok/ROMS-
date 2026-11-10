@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""ROMS 수치예측모델 조회 사이트 서버 (외부 패키지 불필요, Python 3.8+).
+"""ROMS 수치예측모델 및 해양관측부이 조회 사이트 서버 (외부 패키지 불필요, Python 3.8+).
 
 - GET /            -> index.html
 - GET /api/roms    -> 공공데이터포털 ROMS API 프록시 (인증키는 서버 환경변수 ROMS_API_KEY)
+- GET /api/buoy    -> 공공데이터포털 해양관측부이 최신 실황 API 프록시
 - GET /healthz     -> 상태 확인
 """
 import json, os, time, threading
@@ -24,6 +25,7 @@ def _load_env():
 
 _load_env()
 BASE = os.environ.get("ROMS_BASE_URL", "https://apis.data.go.kr/1192136/roms/GetRomsApiService")
+BUOY_BASE = os.environ.get("BUOY_BASE_URL", "https://apis.data.go.kr/1192136/twRecent/getTWRecentApiService")
 KEY = os.environ.get("ROMS_API_KEY", "").strip()
 PORT = int(os.environ.get("PORT", "8000"))
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -102,6 +104,19 @@ class Handler(BaseHTTPRequestHandler):
                 return self._err(502, f"공공데이터포털 응답 오류 (HTTP {e.code})")
             except (URLError, TimeoutError):
                 return self._err(504, "공공데이터포털에 연결하지 못했습니다.")
+        if u.path == "/api/buoy":
+            if not KEY:
+                return self._err(500, "서버에 ROMS_API_KEY 환경변수가 설정되지 않았습니다.")
+            try:
+                key_encoded = KEY if "%" in KEY else quote(KEY, safe="")
+                q_str = f"{u.query}&serviceKey={key_encoded}" if u.query else f"serviceKey={key_encoded}&type=json"
+                req = Request(f"{BUOY_BASE}?{q_str}", headers={"Accept": "application/json", "User-Agent": "roms-site/1.0"})
+                with urlopen(req, timeout=30) as r:
+                    return self._send(200, r.read())
+            except HTTPError as e:
+                return self._err(502, f"해양관측 API 응답 오류 (HTTP {e.code})")
+            except (URLError, TimeoutError):
+                return self._err(504, "해양관측 API 연결에 실패했습니다.")
         self._err(404, "not found")
 
     def log_message(self, fmt, *args):
