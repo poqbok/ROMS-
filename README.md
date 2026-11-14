@@ -24,13 +24,4 @@
 - **Map & Visualization:** Leaflet.js (v1.9.4), Custom Inline SVG Charts
 - **Data API:** 공공데이터포털 (해양수산부 국립해양조사원 ROMS 수치예측모델 / 해양관측 조회 서비스)
 
----
 
-## 🔌 백엔드 API 엔드포인트 요구사항
-
-프론트엔드는 CORS 우회 및 인증키 보호를 위해 아래의 프록시 엔드포인트를 호출합니다.
-
-| Endpoint | 설명 | 주요 쿼리 파라미터 |
-| :--- | :--- | :--- |
-| `GET /api/roms` | ROMS 격자별 해양 예측 데이터 조회 | `xmin`, `xmax`, `ymin`, `ymax`, `pageNo`, `numOfRows` |
-| `GET /api/buoy` | 해양관측부이 실측 데이터 조회 | `type=json`, `numOfRows`, `pageNo` |
